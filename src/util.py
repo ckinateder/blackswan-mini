@@ -23,7 +23,19 @@ BAR_COLMAPS = {
     "v": "volume",
 }
 
-logger = logging.getLogger(__name__)
+
+def get_logger(name: str, level=logging.INFO) -> logging.Logger:
+    logger = logging.getLogger(name)
+    logger.setLevel(level)
+    formatter = logging.Formatter("%(asctime)s [%(name)s] [%(levelname)s]: %(message)s")
+    ch = logging.StreamHandler()
+    ch.setLevel(level)
+    ch.setFormatter(formatter)
+    logger.addHandler(ch)
+    return logger
+
+
+logger = get_logger(__name__)
 load_dotenv()
 
 
@@ -84,6 +96,8 @@ def download_stock_data(
     Returns:
         pd.DataFrame: ohlcv candles
     """
+    # set MI
+    multi_index = isinstance(symbol, list)
     # needs to be in utc
     start = floor(start_time.astimezone(utc).timestamp())
     end = ceil(end_time.astimezone(utc).timestamp())
@@ -119,7 +133,7 @@ def download_stock_data(
             if fill_empty:
                 df = resample_stock_data(df, "1T")
 
-            if multi_index or isinstance(symbol, list):
+            if multi_index:
                 df["symbol"] = s
                 df = df.reset_index()
                 df = df.set_index(["timestamp", "symbol"])
@@ -142,5 +156,8 @@ def download_stock_data(
                 f"with freq 1Min ({e})"
             )
             raise e
+
+    if multi_index:
+        total = total.sort_index(level="timestamp")
 
     return total
