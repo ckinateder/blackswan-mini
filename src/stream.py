@@ -1,5 +1,7 @@
 import os, websocket
 from util import get_env_var
+from alpaca_trade_api.common import URL
+from alpaca_trade_api.stream import Stream
 
 
 class MainStreet:
@@ -22,6 +24,20 @@ class MainStreet:
             on_close=self._on_finnhub_close,
         )
         self.finnhub_ws.on_open = self._on_finnhub_open
+
+        # open alpaca websocket
+        self.alpaca_ws = Stream(
+            self.APCA_API_KEY_ID,
+            self.APCA_API_SECRET_KEY,
+            base_url=URL(self.APCA_API_BASE_URL),
+            data_feed="iex",
+        )  # <- replace to 'sip' if you have PRO subscription
+
+    async def trade_callback(t):
+        print("trade", t)
+
+    async def quote_callback(q):
+        print("quote", q)
 
     def _on_finnhub_close(self, ws, *args) -> None:
         """Finnhub websocket close"""
