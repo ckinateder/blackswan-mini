@@ -1,4 +1,4 @@
-import os, websocket
+import os
 from util import get_env_var, get_logger, download_stock_data
 import util
 from alpaca_trade_api.common import URL
@@ -38,7 +38,7 @@ class MainStreet:
             end_time=datetime.now(),
             fill_empty=True,
         )
-        print(self.rolling_bars)
+        logger.info("Filled rolling bars")
 
         # subscribe to symbols
         for s in self.symbols:

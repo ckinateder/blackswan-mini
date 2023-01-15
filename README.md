@@ -19,3 +19,9 @@ Vital items to product success.
 - built on pandas
 - only essential built-in functions are implemented
 
+## Setup
+
+```bash
+docker build . -t blackswan-mini  # build image
+docker run -it --rm --network host --env-file .env -v $(pwd):/bsm -w /bsm/ blackswan-mini bash -c "python src/stream.py"  # run stream
+```
