@@ -9,6 +9,8 @@ import time
 from alpaca.data.live import StockDataStream
 from alpaca.data.enums import DataFeed
 from alpaca.trading.client import TradingClient
+from alpaca.trading.stream import TradingStream
+from threading import Thread
 
 import pandas as pd
 
@@ -26,7 +28,7 @@ class MainStreet:
         self.symbols = symbols
 
         # open alpaca websocket
-        self.alpaca_ws = StockDataStream(
+        self.alpaca_data_client = StockDataStream(
             self.APCA_API_KEY_ID,
             self.APCA_API_SECRET_KEY,
             feed=DataFeed.IEX,
@@ -34,6 +36,11 @@ class MainStreet:
 
         # get trading client
         self.trading_client = TradingClient(
+            self.APCA_API_KEY_ID,
+            self.APCA_API_SECRET_KEY,
+            paper=self.APCA_API_PAPER,
+        )
+        self.trading_stream = TradingStream(
             self.APCA_API_KEY_ID,
             self.APCA_API_SECRET_KEY,
             paper=self.APCA_API_PAPER,
@@ -48,10 +55,17 @@ class MainStreet:
         )
         logger.info("Filled rolling bars")
 
-        # subscribe to symbols
-        for s in self.symbols:
-            self.alpaca_ws.subscribe_bars(self._on_bar, s)
+        # set stop flag
+        self.stop_flag = False
 
+        # subscribe to symbols and trades
+        self.trading_stream.subscribe_trade_updates(self._on_trade)
+        logger.info(f"Subscribed to trade status updates")
+        for s in self.symbols:
+            self.alpaca_data_client.subscribe_bars(self._on_bar, s)
+            logger.info(f"Subscribed to {s} bars")
+
+    ## async handlers ---------------------------------------------------------
     async def _on_bar(self, b: any):
         """Will receive a bar from the websocket every minute
 
@@ -72,7 +86,56 @@ class MainStreet:
             ["open", "high", "low", "close", "volume"]
         ]
         self.rolling_bars = pd.concat([self.rolling_bars, latest_bar])
-        print(self.rolling_bars)
+        # self.alpaca_data_client.stop()
+        logger.info(f"New bar\n{self.rolling_bars}")
+
+    async def _on_trade(self, t: any):
+        """Will receive a trade from the websocket
+
+        Args:
+            t (any): incoming trade
+        """
+        print(t)
+
+    ## ------------------------------------------------------------------------
+
+    ## calling functions
+    def start(self) -> None:
+        """Starts the websocket - BLOCKING"""
+        # sleep until time to open
+        clk = self._get_market_clock()
+        if not clk.is_open:
+            duration = clk.next_open - clk.timestamp
+            logger.info(f"Sleeping {duration} until market open")
+            time.sleep(duration.total_seconds())
+
+        # start websockets
+        self.alpaca_data_client_thread = Thread(target=self.alpaca_data_client.run)
+        self.alpaca_data_client_thread.start()
+        self.trading_stream_thread = Thread(target=self.trading_stream.run)
+        self.trading_stream_thread.start()
+
+        # sleep until time to close
+        while not self._close_to_market_close():
+            try:
+                time.sleep(60)
+            except KeyboardInterrupt:
+                break
+
+        # close websockets
+        self.stop()
+
+    def stop(self) -> None:
+        """Stops the running process"""
+        self.stop_flag = True
+        self.alpaca_data_client.stop()
+        self.trading_stream.stop()
+        self.alpaca_data_client_thread.join()
+        self.trading_stream_thread.join()
+
+    ## ------------------------------------------------------------------------
+
+    ## private functions ------------------------------------------------------
 
     def _get_market_clock(self) -> any:
         return self.trading_client.get_clock()
@@ -86,15 +149,7 @@ class MainStreet:
         clk = self._get_market_clock()
         return (clk.next_close - clk.timestamp).total_seconds() < 300
 
-    def start(self) -> None:
-        """Starts the websocket"""
-        # sleep until time to open
-        clk = self._get_market_clock()
-        if not clk.is_open:
-            duration = clk.next_open - clk.timestamp
-            logger.info(f"Sleeping {duration} until market open")
-            time.sleep(duration.total_seconds())
-        asyncio.run(self.alpaca_ws._run_forever())
+    ## ------------------------------------------------------------------------
 
 
 if __name__ == "__main__":
