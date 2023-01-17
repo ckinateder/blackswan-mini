@@ -12,6 +12,7 @@ Vital items to product success.
 - functional paradigm for decision making - same decision function used for backtesting and trading
 - use alpaca for bars and trade requests
 - use finnnhub to backfill bars
+- built to be lightweight
 
 ### Code
 

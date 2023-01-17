@@ -7,7 +7,7 @@ import pandas as pd
 from dotenv import load_dotenv
 from zoneinfo import ZoneInfo
 import logging
-
+import datetime as dt_module
 
 utc = ZoneInfo("UTC")
 USING_TIMEZONE = datetime.now(timezone.utc).astimezone().tzinfo
@@ -161,3 +161,22 @@ def download_stock_data(
         total = total.sort_index(level="timestamp")
 
     return total
+
+
+def market_open_at_time(
+    t: dt_module.time,
+) -> bool:
+    """returns whether or not the market is open given the input time
+    Args:
+        t (datetime.time): time to check for (tz.aware)
+    Returns:
+        bool: whether its open
+    """
+    start: dt_module.time = dt_module.time(14, 30, 0, tzinfo=utc)
+    end: dt_module.time = dt_module.time(21, 0, 0, tzinfo=utc)
+
+    is_between = False
+    is_between |= start <= t <= end
+    is_between |= end <= start and (start <= t or t <= end)
+
+    return is_between
