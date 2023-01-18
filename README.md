@@ -26,3 +26,12 @@ Vital items to product success.
 docker build . -t blackswan-mini  # build image
 docker run -it --rm --network host --env-file .env -v $(pwd):/bsm -w /bsm/ blackswan-mini bash -c "python src/stream.py"  # run stream
 ```
+
+
+## Progress Tracking
+
+### Todo
+- add tracking for trades 
+- switch resample for finta resample 
+- add feature engineering
+- proper shutdown stuff

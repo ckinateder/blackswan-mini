@@ -1,23 +1,23 @@
 import os
-from util import get_env_var, get_logger, download_stock_data
-import util
+from util import get_bars_for_symbol, get_env_var, get_logger, download_stock_data
 from datetime import datetime, timedelta
 import asyncio
 import logging
 import time
+from threading import Thread
 
 from alpaca.data.live import StockDataStream
 from alpaca.data.enums import DataFeed
 from alpaca.trading.client import TradingClient
 from alpaca.trading.stream import TradingStream
-from threading import Thread
+from finta import TA
 
 import pandas as pd
 
-logger = get_logger(__name__)
+logger = get_logger("AIOTrader")
 
 
-class MainStreet:
+class AIOTrader:
     """Contains finnhub and alpaca api calls"""
 
     def __init__(self, symbols: list) -> None:
@@ -86,8 +86,14 @@ class MainStreet:
             ["open", "high", "low", "close", "volume"]
         ]
         self.rolling_bars = pd.concat([self.rolling_bars, latest_bar])
-        # self.alpaca_data_client.stop()
-        logger.info(f"New bar\n{self.rolling_bars}")
+
+        # calculate indicators
+        engineered = self._feature_engineer(
+            get_bars_for_symbol(self.rolling_bars, b.symbol)
+        )
+
+        # log
+        logger.info(f"New bar\n{engineered}")
 
     async def _on_trade(self, t: any):
         """Will receive a trade from the websocket
@@ -128,14 +134,57 @@ class MainStreet:
     def stop(self) -> None:
         """Stops the running process"""
         self.stop_flag = True
+        self.trading_client.cancel_orders()  # cancel all orders
+        self.trading_client.close_all_positions(
+            cancel_orders=True
+        )  # close any hanging positions
         self.alpaca_data_client.stop()
         self.trading_stream.stop()
         self.alpaca_data_client_thread.join()
         self.trading_stream_thread.join()
 
+    def backtest(self, start_time: datetime, end_time: datetime) -> None:
+        """Backtests the strategy with the same decision making function used live
+
+        Steps for each symbol:
+        0. Set up starting balances
+        1. Download data
+        2. Feature engineer
+        3. Iterate through each bar
+        4. Make decision
+        5. Record decision and apply to running balance
+        6. Assess performance w.r.t to starting balance AND holding
+
+        Args:
+            start_time (datetime): start time
+            end_time (datetime): end time
+        """
+        pass
+
     ## ------------------------------------------------------------------------
 
     ## private functions ------------------------------------------------------
+    def _feature_engineer(self, bars: pd.DataFrame) -> pd.DataFrame:
+        """Feature engineer the bars. Can be used to add indicators, etc. Length of DF will be checked
+
+        Args:
+            bars (pd.DataFrame): incoming bars
+
+        Returns:
+            pd.DataFrame: feature engineered bars
+        """
+        # make copy
+        df = bars.copy()
+
+        # add x indicators
+        df["RSI"] = TA.RSI(df, 14)
+
+        # drop na and return
+        return df.dropna()
+
+    def _make_decision(self, bars: pd.DataFrame) -> None:
+        """Makes a decision to sell or buy based on the bars"""
+        pass
 
     def _get_market_clock(self) -> any:
         return self.trading_client.get_clock()
@@ -155,8 +204,8 @@ class MainStreet:
 if __name__ == "__main__":
     from dotenv import load_dotenv
 
-    logger.info("Starting MainStreet")
+    logger.info("Starting AIOTrader")
 
     load_dotenv()
-    ms = MainStreet(["AAPL", "AMZN"])
+    ms = AIOTrader(["AAPL", "AMZN"])
     ms.start()

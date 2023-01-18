@@ -174,9 +174,25 @@ def market_open_at_time(
     """
     start: dt_module.time = dt_module.time(14, 30, 0, tzinfo=utc)
     end: dt_module.time = dt_module.time(21, 0, 0, tzinfo=utc)
+    return (end <= start and (start <= t or t <= end)) | start <= t <= end
 
-    is_between = False
-    is_between |= start <= t <= end
-    is_between |= end <= start and (start <= t or t <= end)
 
-    return is_between
+def get_bars_for_symbol(bars: pd.DataFrame, symbol: str) -> pd.DataFrame:
+    """Get bars for a specific symbol
+
+    Args:
+        bars (pd.DataFrame): bars dataframe
+        symbol (str): symbol to get
+
+    Returns:
+        pd.DataFrame: bars for symbol
+    """
+    if isinstance(bars.index, pd.MultiIndex):
+        return (
+            bars.loc[(slice(None), symbol), :]
+            .reset_index()
+            .set_index("timestamp")
+            .drop(columns=["symbol"])
+        )
+    else:
+        return bars
