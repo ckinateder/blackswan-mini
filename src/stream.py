@@ -1,5 +1,11 @@
 import os
-from util import get_bars_for_symbol, get_env_var, get_logger, download_stock_data
+from util import (
+    fibonacci,
+    get_bars_for_symbol,
+    get_env_var,
+    get_logger,
+    download_stock_data,
+)
 from datetime import datetime, timedelta
 import asyncio
 import logging
@@ -12,6 +18,7 @@ from alpaca.trading.client import TradingClient
 from alpaca.trading.stream import TradingStream
 from finta import TA
 
+import numpy as np
 import pandas as pd
 
 logger = get_logger("AIOTrader")
@@ -53,6 +60,7 @@ class AIOTrader:
             end_time=datetime.now(),
             fill_empty=True,
         )
+        self.filled_rolling_bars = True
         logger.info("Filled rolling bars")
 
         # set stop flag
@@ -92,6 +100,11 @@ class AIOTrader:
             get_bars_for_symbol(self.rolling_bars, b.symbol)
         )
 
+        # make decision
+        decision = self._make_decision(engineered)
+
+        # act on decision
+
         # log
         logger.info(f"New bar\n{engineered}")
 
@@ -121,6 +134,9 @@ class AIOTrader:
         self.trading_stream_thread = Thread(target=self.trading_stream.run)
         self.trading_stream_thread.start()
 
+        # backtest
+        self.backtest()
+
         # sleep until time to close
         while not self._close_to_market_close():
             try:
@@ -143,7 +159,7 @@ class AIOTrader:
         self.alpaca_data_client_thread.join()
         self.trading_stream_thread.join()
 
-    def backtest(self, start_time: datetime, end_time: datetime) -> None:
+    def backtest(self) -> None:
         """Backtests the strategy with the same decision making function used live
 
         Steps for each symbol:
@@ -154,12 +170,37 @@ class AIOTrader:
         4. Make decision
         5. Record decision and apply to running balance
         6. Assess performance w.r.t to starting balance AND holding
-
-        Args:
-            start_time (datetime): start time
-            end_time (datetime): end time
         """
-        pass
+        assert self.filled_rolling_bars == True, "Must fill rolling bars first"
+        for symbol in self.symbols:
+            # 0. Set up starting balances
+            starting_balance = 10000
+            running_balance = starting_balance
+            holding_balance = starting_balance
+            holding_shares = 0
+
+            # 1. Download data
+            bars = get_bars_for_symbol(self.rolling_bars, symbol)
+
+            # 2. Feature engineer
+            engineered = self._feature_engineer(bars)
+            with_y = self._compute_y(engineered)
+
+            # 3. Iterate through each bar
+            for _, row in with_y.iterrows():
+                # 4. Make decision
+                decision = self._make_decision(row)
+
+                # 5. Record decision and apply to running balance
+                if decision == "buy":
+                    running_balance -= row["close"]
+                    holding_shares += 1
+                elif decision == "sell":
+                    running_balance += row["close"]
+                    holding_shares -= 1
+
+                # update holding balance
+                holding_balance = holding_shares * row["close"]
 
     ## ------------------------------------------------------------------------
 
@@ -179,10 +220,28 @@ class AIOTrader:
         # add x indicators
         df["RSI"] = TA.RSI(df, 14)
 
+        # add returns
+        for r in fibonacci(7):
+            df[f"return_{r}"] = np.log(df["close"] / df["close"].shift(r)).dropna()
+
         # drop na and return
         return df.dropna()
 
-    def _make_decision(self, bars: pd.DataFrame) -> None:
+    def _compute_y(self, feature_engineered_bars: pd.DataFrame) -> pd.DataFrame:
+        """Compute the y variable (decision column)
+
+        Args:
+            feature_engineered_bars (pd.DataFrame): bars with features
+
+        Returns:
+            pd.DataFrame: _description_
+        """
+        df = feature_engineered_bars.copy()
+        df["y"] = np.where(df["close"].shift(1) > df["close"], 1, -1)
+        print(df)
+        return df.dropna()
+
+    def _make_decision(self, bars: pd.DataFrame) -> str:
         """Makes a decision to sell or buy based on the bars"""
         pass
 

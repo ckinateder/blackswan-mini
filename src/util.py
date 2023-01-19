@@ -196,3 +196,13 @@ def get_bars_for_symbol(bars: pd.DataFrame, symbol: str) -> pd.DataFrame:
         )
     else:
         return bars
+
+
+def fibonacci(n: int) -> list:
+    if n <= 0:
+        return [1]
+    sequence = [1]
+    while len(sequence) <= n:
+        next_value = sequence[len(sequence) - 1] + sequence[len(sequence) - 2]
+        sequence.append(next_value)
+    return sequence
