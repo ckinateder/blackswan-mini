@@ -66,6 +66,9 @@ class AIOTrader:
         # set stop flag
         self.stop_flag = False
 
+        # set trading flags
+        self.trading = {s: False for s in self.symbols}
+
         # subscribe to symbols and trades
         self.trading_stream.subscribe_trade_updates(self._on_trade)
         logger.info(f"Subscribed to trade status updates")
@@ -94,6 +97,11 @@ class AIOTrader:
             ["open", "high", "low", "close", "volume"]
         ]
         self.rolling_bars = pd.concat([self.rolling_bars, latest_bar])
+
+        # check if not trading
+        if not self.trading[b.symbol]:
+            logger.info(f"Skipping trading for {b.symbol} (backtesting failed)")
+            return
 
         # calculate indicators
         engineered = self._feature_engineer(
@@ -202,6 +210,10 @@ class AIOTrader:
                 # update holding balance
                 holding_balance = holding_shares * row["close"]
 
+            # 6. Assess performance w.r.t to starting balance AND holding
+            logger.warning("Backtest results not analyzed yet")
+            self.trading[symbol] = True
+
     ## ------------------------------------------------------------------------
 
     ## private functions ------------------------------------------------------
@@ -241,9 +253,10 @@ class AIOTrader:
         print(df)
         return df.dropna()
 
-    def _make_decision(self, bars: pd.DataFrame) -> str:
+    def _make_decision(self, feature_engineered_bars: pd.DataFrame) -> int:
         """Makes a decision to sell or buy based on the bars"""
-        pass
+
+        return 0
 
     def _get_market_clock(self) -> any:
         return self.trading_client.get_clock()

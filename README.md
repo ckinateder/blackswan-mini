@@ -35,4 +35,3 @@ docker run -it --rm --network host --env-file .env -v $(pwd):/bsm -w /bsm/ black
 - switch resample for finta resample 
 - add feature engineering
 - proper shutdown stuff
-- add trading flag after backtesting
