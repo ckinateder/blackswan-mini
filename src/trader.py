@@ -53,14 +53,8 @@ class AIOTrader:
             paper=self.APCA_API_PAPER,
         )
 
-        # define rolling dataframe
-        self.rolling_bars = download_stock_data(
-            self.symbols,
-            start_time=datetime.now() - timedelta(days=5),
-            end_time=datetime.now(),
-            fill_empty=True,
-        )
-        self.filled_rolling_bars = True
+        # define rolling dataframe - this keeps track of all bars
+        self._fill_rolling_bars()
         logger.info("Filled rolling bars")
 
         # set stop flag
@@ -135,6 +129,8 @@ class AIOTrader:
             duration = clk.next_open - clk.timestamp
             logger.info(f"Sleeping {duration} until market open")
             time.sleep(duration.total_seconds())
+            logger.info("Refilling rolling bars")
+            self._fill_rolling_bars()
 
         # start websockets
         self.alpaca_data_client_thread = Thread(target=self.alpaca_data_client.run)
@@ -200,10 +196,10 @@ class AIOTrader:
                 decision = self._make_decision(row)
 
                 # 5. Record decision and apply to running balance
-                if decision == "buy":
+                if decision == 1:
                     running_balance -= row["close"]
                     holding_shares += 1
-                elif decision == "sell":
+                elif decision == -1:
                     running_balance += row["close"]
                     holding_shares -= 1
 
@@ -211,7 +207,12 @@ class AIOTrader:
                 holding_balance = holding_shares * row["close"]
 
             # 6. Assess performance w.r.t to starting balance AND holding
-            logger.warning("Backtest results not analyzed yet")
+            roi = (running_balance - starting_balance) / starting_balance
+            logger.info(
+                f"{symbol} backtest results:\n\tStarting balance: ${starting_balance:,.2f}"
+                f"\n\tEnding balance: ${running_balance:,.2f}, Holding balance: ${holding_balance:,.2f}"
+                f"\n\tROI: {roi:.4}"
+            )
             self.trading[symbol] = True
 
     ## ------------------------------------------------------------------------
@@ -254,9 +255,13 @@ class AIOTrader:
         return df.dropna()
 
     def _make_decision(self, feature_engineered_bars: pd.DataFrame) -> int:
-        """Makes a decision to sell or buy based on the bars"""
+        """Makes a decision to sell or buy based on the bars
+        1 = buy
+        -1 = sell
+        0 = hold
+        """
 
-        return 0
+        return 1
 
     def _get_market_clock(self) -> any:
         return self.trading_client.get_clock()
@@ -269,6 +274,16 @@ class AIOTrader:
         """
         clk = self._get_market_clock()
         return (clk.next_close - clk.timestamp).total_seconds() < 300
+
+    def _fill_rolling_bars(self) -> None:
+        """Fills the rolling bars with data"""
+        self.rolling_bars = download_stock_data(
+            self.symbols,
+            start_time=datetime.now() - timedelta(days=5),
+            end_time=datetime.now(),
+            fill_empty=True,
+        )
+        self.filled_rolling_bars = True
 
     ## ------------------------------------------------------------------------
 
