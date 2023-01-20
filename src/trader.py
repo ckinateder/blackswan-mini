@@ -16,6 +16,9 @@ from alpaca.data.live import StockDataStream
 from alpaca.data.enums import DataFeed
 from alpaca.trading.client import TradingClient
 from alpaca.trading.stream import TradingStream
+from alpaca.trading.requests import LimitOrderRequest
+from alpaca.trading.enums import OrderSide, TimeInForce, TradeEvent, OrderType
+
 from finta import TA
 
 import numpy as np
@@ -25,6 +28,9 @@ logger = get_logger("AIOTrader")
 
 # configs
 MIN_ROI = 1.03  # min ROI for trading
+
+# constants
+SIDE_CONVERTER = {1: OrderSide.BUY, -1: OrderSide.SELL}
 
 
 class AIOTrader:
@@ -97,7 +103,9 @@ class AIOTrader:
 
         # check if not trading
         if not self.trading[b.symbol]:
-            logger.info(f"Skipping trading for {b.symbol} (backtesting failed)")
+            logger.debug(
+                f"Skipping trading for {b.symbol} (reason: backtesting failed)"
+            )
             return
 
         # calculate indicators
@@ -107,11 +115,26 @@ class AIOTrader:
 
         # make decision
         decision = self._make_decision(engineered)
+        logger.info(f"Decision for {b.symbol} @ close ${b.close:,.2f}: {decision}")
+        if decision == 0:
+            return
+
+        # make order
+        limit_order_data = LimitOrderRequest(
+            symbol=b.symbol,
+            limit_price=round(b.close, 2),
+            qty=1,
+            side=SIDE_CONVERTER[decision],
+            time_in_force=TimeInForce.DAY,
+        )
+
+        # Limit order
+        limit_order = self.trading_client.submit_order(order_data=limit_order_data)
 
         # act on decision
 
         # log
-        logger.info(f"New bar\n{engineered}")
+        logger.info(f"New bar for {b.symbol}\n{engineered}")
 
     async def _on_trade(self, t: any):
         """Will receive a trade from the websocket
@@ -119,7 +142,21 @@ class AIOTrader:
         Args:
             t (any): incoming trade
         """
-        print(t)
+        o = t.order
+        if t.event == TradeEvent.FILL:
+            logger.info(f"Trade filled: {o.id} ({o.side} {o.qty} @ {o.filled_at})")
+        elif t.event == TradeEvent.NEW:
+            deets = f"{o.side} {o.qty}"
+            if o.type == OrderType.LIMIT:
+                deets += f" @ {o.limit_price}"
+            logger.info(f"Trade created: {o.id} ({deets})")
+        elif t.event == TradeEvent.CANCELED:
+            deets = f"{o.side} {o.qty}"
+            if o.type == OrderType.LIMIT:
+                deets += f" @ {o.limit_price}"
+            logger.info(f"Trade canceled: {o.id} ({deets})")
+        else:
+            logger.info(f"Unrecognized trade: {o.id}")
 
     ## ------------------------------------------------------------------------
 
@@ -156,11 +193,13 @@ class AIOTrader:
 
     def stop(self) -> None:
         """Stops the running process"""
+        logger.info("Stopping")
         self.stop_flag = True
         self.trading_client.cancel_orders()  # cancel all orders
         self.trading_client.close_all_positions(
             cancel_orders=True
         )  # close any hanging positions
+        logger.info("Closing all positions and canceling all orders")
         self.alpaca_data_client.stop()
         self.trading_stream.stop()
         self.alpaca_data_client_thread.join()
@@ -212,7 +251,10 @@ class AIOTrader:
                 holding_balance = holding_shares * row["close"]
 
             # 6. Assess performance w.r.t to starting balance AND holding
+            # final rebalance
+            running_balance += holding_shares * row["close"]
             roi = 1 + ((running_balance - starting_balance) / starting_balance)
+
             logger.info(
                 f"{symbol} backtest results:\n\tStarting balance: ${starting_balance:,.2f}"
                 f"\n\tEnding balance: ${running_balance:,.2f}, Holding balance: ${holding_balance:,.2f}"
