@@ -23,6 +23,9 @@ import pandas as pd
 
 logger = get_logger("AIOTrader")
 
+# configs
+MIN_ROI = 1.03  # min ROI for trading
+
 
 class AIOTrader:
     """Contains finnhub and alpaca api calls"""
@@ -193,7 +196,9 @@ class AIOTrader:
             # 3. Iterate through each bar
             for _, row in with_y.iterrows():
                 # 4. Make decision
-                decision = self._make_decision(row)
+                decision = self._make_decision(
+                    row.to_frame().T
+                )  # must be a dataframe NOT series
 
                 # 5. Record decision and apply to running balance
                 if decision == 1:
@@ -207,13 +212,15 @@ class AIOTrader:
                 holding_balance = holding_shares * row["close"]
 
             # 6. Assess performance w.r.t to starting balance AND holding
-            roi = (running_balance - starting_balance) / starting_balance
+            roi = 1 + ((running_balance - starting_balance) / starting_balance)
             logger.info(
                 f"{symbol} backtest results:\n\tStarting balance: ${starting_balance:,.2f}"
                 f"\n\tEnding balance: ${running_balance:,.2f}, Holding balance: ${holding_balance:,.2f}"
                 f"\n\tROI: {roi:.4}"
             )
-            self.trading[symbol] = True
+            if roi > MIN_ROI:
+                logger.info(f"Enabling trading for {symbol}")
+                self.trading[symbol] = True
 
     ## ------------------------------------------------------------------------
 
@@ -251,7 +258,6 @@ class AIOTrader:
         """
         df = feature_engineered_bars.copy()
         df["y"] = np.where(df["close"].shift(1) > df["close"], 1, -1)
-        print(df)
         return df.dropna()
 
     def _make_decision(self, feature_engineered_bars: pd.DataFrame) -> int:
@@ -260,8 +266,12 @@ class AIOTrader:
         -1 = sell
         0 = hold
         """
-
-        return 1
+        latest = feature_engineered_bars.tail(1)  # get latest row
+        if latest["RSI"].values[0] < 30:
+            return 1
+        elif latest["RSI"].values[0] > 70:
+            return -1
+        return 0
 
     def _get_market_clock(self) -> any:
         return self.trading_client.get_clock()
