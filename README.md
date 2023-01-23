@@ -33,5 +33,5 @@ docker run -it --rm --network host --env-file .env -v $(pwd):/bsm -w /bsm/ black
 ### Todo
 - add tracking for trades 
 - switch resample for finta resample 
-- add feature engineering
 - proper shutdown stuff
+- account info each min

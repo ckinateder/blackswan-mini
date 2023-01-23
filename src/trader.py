@@ -67,10 +67,14 @@ class AIOTrader:
         logger.info("Filled rolling bars")
 
         # set stop flag
-        self.stop_flag = False
+        self.start_time = None
+        self.end_time = None
 
         # set trading flags
         self.trading = {s: False for s in self.symbols}
+
+        # init account
+        self.account = self.trading_client.get_account()
 
         # subscribe to symbols and trades
         self.trading_stream.subscribe_trade_updates(self._on_trade)
@@ -172,11 +176,15 @@ class AIOTrader:
             logger.info("Refilling rolling bars")
             self._fill_rolling_bars()
 
-        # start websockets
+        self.start_time = datetime.now()
+
+        # start threads
         self.alpaca_data_client_thread = Thread(target=self.alpaca_data_client.run)
         self.alpaca_data_client_thread.start()
         self.trading_stream_thread = Thread(target=self.trading_stream.run)
         self.trading_stream_thread.start()
+        self.account_monitor_thread = Thread(target=self._account_monitor)
+        self.account_monitor_thread.start()
 
         # backtest
         self.backtest()
@@ -194,7 +202,7 @@ class AIOTrader:
     def stop(self) -> None:
         """Stops the running process"""
         logger.info("Stopping")
-        self.stop_flag = True
+        self.end_time = datetime.now()
         self.trading_client.cancel_orders()  # cancel all orders
         self.trading_client.close_all_positions(
             cancel_orders=True
@@ -204,6 +212,7 @@ class AIOTrader:
         self.trading_stream.stop()
         self.alpaca_data_client_thread.join()
         self.trading_stream_thread.join()
+        self.account_monitor_thread.join()
 
     def backtest(self) -> None:
         """Backtests the strategy with the same decision making function used live
@@ -257,12 +266,15 @@ class AIOTrader:
 
             logger.info(
                 f"{symbol} backtest results:\n\tStarting balance: ${starting_balance:,.2f}"
-                f"\n\tEnding balance: ${running_balance:,.2f}, Holding balance: ${holding_balance:,.2f}"
+                f"\n\tEnding balance: ${running_balance:,.2f} (selling off {holding_shares} shares at end), If Buy and Hold, balance: ${holding_balance:,.2f} & {holding_shares} shares"
                 f"\n\tROI: {roi:.4}"
             )
             if roi > MIN_ROI:
                 logger.info(f"Enabling trading for {symbol}")
                 self.trading[symbol] = True
+            else:
+                logger.info(f"Disabling trading for {symbol} :(")
+                self.trading[symbol] = False
 
     ## ------------------------------------------------------------------------
 
@@ -316,6 +328,7 @@ class AIOTrader:
         return 0
 
     def _get_market_clock(self) -> any:
+        """Gets the market clock"""
         return self.trading_client.get_clock()
 
     def _close_to_market_close(self) -> bool:
@@ -336,6 +349,16 @@ class AIOTrader:
             fill_empty=True,
         )
         self.filled_rolling_bars = True
+
+    def _account_monitor(self) -> None:
+        """Gets account balance every 60 seconds"""
+        every = 60
+        while self.end_time == None:
+            t = datetime.utcnow()
+            st = t.second + (t.microsecond / 1000000.0)
+            time.sleep(every - st)
+            self.account = self.trading_client.get_account()
+            logger.info(f"account: {self.account}")
 
     ## ------------------------------------------------------------------------
 
