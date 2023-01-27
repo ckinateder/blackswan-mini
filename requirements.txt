@@ -8,6 +8,7 @@ charset-normalizer==2.1.1
 finta==1.3
 frozenlist==1.3.3
 idna==3.4
+joblib==1.2.0
 msgpack==1.0.4
 multidict==6.0.4
 numpy==1.24.1

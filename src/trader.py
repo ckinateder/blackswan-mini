@@ -20,6 +20,7 @@ from alpaca.trading.requests import LimitOrderRequest
 from alpaca.trading.enums import OrderSide, TimeInForce, TradeEvent, OrderType
 
 from finta import TA
+from model import TertiaryModel
 
 import numpy as np
 import pandas as pd
@@ -73,6 +74,9 @@ class AIOTrader:
         # set trading flags
         self.trading = {s: False for s in self.symbols}
 
+        # init models
+        self.models = {s: TertiaryModel() for s in self.symbols}
+
         # init account
         self.account = self.trading_client.get_account()
 
@@ -113,12 +117,12 @@ class AIOTrader:
             return
 
         # calculate indicators
-        engineered = self._feature_engineer(
+        engineered = TertiaryModel.feature_engineer(
             get_bars_for_symbol(self.rolling_bars, b.symbol)
         )
 
         # make decision
-        decision = self._make_decision(engineered)
+        decision = self.models[b.symbol].make_decision(engineered)
         logger.info(f"Decision for {b.symbol} @ close ${b.close:,.2f}: {decision}")
         if decision == 0:
             return
@@ -238,13 +242,17 @@ class AIOTrader:
             bars = get_bars_for_symbol(self.rolling_bars, symbol)
 
             # 2. Feature engineer
-            engineered = self._feature_engineer(bars)
-            with_y = self._compute_y(engineered)
+            engineered = TertiaryModel.feature_engineer(bars)
+            with_y = TertiaryModel.compute_y(engineered)
+
+            # 2a. Train model for each symbol
+
+            ####
 
             # 3. Iterate through each bar
             for _, row in with_y.iterrows():
                 # 4. Make decision
-                decision = self._make_decision(
+                decision = self.models[symbol].make_decision(
                     row.to_frame().T
                 )  # must be a dataframe NOT series
 
@@ -279,54 +287,6 @@ class AIOTrader:
     ## ------------------------------------------------------------------------
 
     ## private functions ------------------------------------------------------
-    def _feature_engineer(self, bars: pd.DataFrame) -> pd.DataFrame:
-        """Feature engineer the bars. Can be used to add indicators, etc. Length of DF will be checked
-
-        Args:
-            bars (pd.DataFrame): incoming bars
-
-        Returns:
-            pd.DataFrame: feature engineered bars
-        """
-        # make copy
-        df = bars.copy()
-
-        # add x indicators
-        df["RSI"] = TA.RSI(df, 14)
-
-        # add returns
-        for r in fibonacci(7):
-            df[f"return_{r}"] = np.log(df["close"] / df["close"].shift(r)).dropna()
-
-        # drop na and return
-        return df.dropna()
-
-    def _compute_y(self, feature_engineered_bars: pd.DataFrame) -> pd.DataFrame:
-        """Compute the y variable (decision column)
-
-        Args:
-            feature_engineered_bars (pd.DataFrame): bars with features
-
-        Returns:
-            pd.DataFrame: _description_
-        """
-        df = feature_engineered_bars.copy()
-        df["y"] = np.where(df["close"].shift(1) > df["close"], 1, -1)
-        return df.dropna()
-
-    def _make_decision(self, feature_engineered_bars: pd.DataFrame) -> int:
-        """Makes a decision to sell or buy based on the bars
-        1 = buy
-        -1 = sell
-        0 = hold
-        """
-        latest = feature_engineered_bars.tail(1)  # get latest row
-        if latest["RSI"].values[0] < 30:
-            return 1
-        elif latest["RSI"].values[0] > 70:
-            return -1
-        return 0
-
     def _get_market_clock(self) -> any:
         """Gets the market clock"""
         return self.trading_client.get_clock()
