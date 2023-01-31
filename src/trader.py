@@ -327,6 +327,16 @@ class AIOTrader:
             self.account = self.trading_client.get_account()
             logger.info(self._format_account())
 
+    def _calculate_roi(self) -> float:
+        """Calculate ROI since starting
+
+        Returns:
+            float: _description_
+        """
+        return (
+            self.account.portfolio_value - self.starting_account.portfolio_value
+        ) / self.starting_account.portfolio_value
+
     def _format_account(self) -> str:
         """Formats the account balance for logging
 
@@ -338,6 +348,7 @@ class AIOTrader:
             f"(${self.account.portfolio_value} total)"
             f"\n\tBuying power: ${self.account.buying_power}"
             f"\n\tEquity: ${self.account.equity}"
+            f"\n\tROI: {self._calculate_roi():.4}"
         )
         return logstr
 
