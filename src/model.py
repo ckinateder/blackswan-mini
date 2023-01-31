@@ -1,10 +1,12 @@
 """Holds the model for prediction
 """
 import joblib
-from util import fibonacci
+from util import fibonacci, get_logger
 import numpy as np
 import pandas as pd
 from finta import TA
+
+logger = get_logger(__name__)
 
 
 class TertiaryModel:
@@ -13,14 +15,14 @@ class TertiaryModel:
     def __init__(self):
         pass
 
-    def train(self, X: pd.DataFrame, y: pd.DataFrame):
+    def train(self, X_and_y: pd.DataFrame):
         """Train the model on the given data
 
         Args:
             X (pd.DataFrame): feature engineered bars
             y (pd.DataFrame): y variable
         """
-        pass
+        logger.warning("No training implemented")
 
     @staticmethod
     def feature_engineer(bars: pd.DataFrame) -> pd.DataFrame:

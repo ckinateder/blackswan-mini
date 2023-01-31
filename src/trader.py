@@ -28,8 +28,8 @@ import pandas as pd
 logger = get_logger("AIOTrader")
 
 # configs
-MIN_ROI = 1.03  # min ROI for trading
-
+MIN_ROI = 1.0  # min ROI for trading
+TT_SPLIT = 0.75  # train test split
 # constants
 SIDE_CONVERTER = {1: OrderSide.BUY, -1: OrderSide.SELL}
 
@@ -78,7 +78,8 @@ class AIOTrader:
         self.models = {s: TertiaryModel() for s in self.symbols}
 
         # init account
-        self.account = self.trading_client.get_account()
+        self.starting_account = self.trading_client.get_account()
+        self.account = self.starting_account
 
         # subscribe to symbols and trades
         self.trading_stream.subscribe_trade_updates(self._on_trade)
@@ -127,6 +128,7 @@ class AIOTrader:
         if decision == 0:
             return
 
+        # act on decision
         # make order
         limit_order_data = LimitOrderRequest(
             symbol=b.symbol,
@@ -138,8 +140,6 @@ class AIOTrader:
 
         # Limit order
         limit_order = self.trading_client.submit_order(order_data=limit_order_data)
-
-        # act on decision
 
         # log
         logger.info(f"New bar for {b.symbol}\n{engineered}")
@@ -245,12 +245,16 @@ class AIOTrader:
             engineered = TertiaryModel.feature_engineer(bars)
             with_y = TertiaryModel.compute_y(engineered)
 
-            # 2a. Train model for each symbol
+            # 2a. Train test split
+            split = int(TT_SPLIT * with_y.shape[0])
+            train_set = with_y.iloc[:split]
+            test_set = with_y.iloc[split:]
 
-            ####
+            # 2b. Train model for each symbol
+            self.models[symbol].train(train_set)
 
             # 3. Iterate through each bar
-            for _, row in with_y.iterrows():
+            for _, row in test_set.iterrows():
                 # 4. Make decision
                 decision = self.models[symbol].make_decision(
                     row.to_frame().T
@@ -272,11 +276,14 @@ class AIOTrader:
             running_balance += holding_shares * row["close"]
             roi = 1 + ((running_balance - starting_balance) / starting_balance)
 
-            logger.info(
-                f"{symbol} backtest results:\n\tStarting balance: ${starting_balance:,.2f}"
+            logstr = (
+                f"{symbol} backtest results:"
+                f"From {test_set.index[0]} to {test_set.index[-1]}"
+                f"\n\tStarting balance: ${starting_balance:,.2f}"
                 f"\n\tEnding balance: ${running_balance:,.2f} (selling off {holding_shares} shares at end), If Buy and Hold, balance: ${holding_balance:,.2f} & {holding_shares} shares"
                 f"\n\tROI: {roi:.4}"
             )
+            logger.info(logstr)
             if roi > MIN_ROI:
                 logger.info(f"Enabling trading for {symbol}")
                 self.trading[symbol] = True
@@ -318,7 +325,21 @@ class AIOTrader:
             st = t.second + (t.microsecond / 1000000.0)
             time.sleep(every - st)
             self.account = self.trading_client.get_account()
-            logger.info(f"account: {self.account}")
+            logger.info(self._format_account())
+
+    def _format_account(self) -> str:
+        """Formats the account balance for logging
+
+        Returns:
+            str: formatted account balance
+        """
+        logstr = (
+            f"Account balance: ${self.account.cash} "
+            f"(${self.account.portfolio_value} total)"
+            f"\n\tBuying power: ${self.account.buying_power}"
+            f"\n\tEquity: ${self.account.equity}"
+        )
+        return logstr
 
     ## ------------------------------------------------------------------------
 
@@ -329,5 +350,5 @@ if __name__ == "__main__":
     logger.info("Starting AIOTrader")
 
     load_dotenv()
-    ms = AIOTrader(["AAPL", "AMZN"])
+    ms = AIOTrader(["AAPL", "AMZN", "AAL", "F", "T"])
     ms.start()
