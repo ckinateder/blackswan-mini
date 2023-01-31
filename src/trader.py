@@ -247,11 +247,12 @@ class AIOTrader:
 
             # 2a. Train test split
             split = int(TT_SPLIT * with_y.shape[0])
-            train_set = with_y.iloc[:split]
-            test_set = with_y.iloc[split:]
+            test_set = with_y.iloc[split:].drop(
+                "y", axis=1
+            )  # drop y for test set, not needed
 
             # 2b. Train model for each symbol
-            self.models[symbol].train(train_set)
+            self.models[symbol].train(with_y, tt_split=TT_SPLIT)  # tt splits inside
 
             # 3. Iterate through each bar
             for _, row in test_set.iterrows():

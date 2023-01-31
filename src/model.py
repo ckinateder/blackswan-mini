@@ -5,6 +5,9 @@ from util import fibonacci, get_logger
 import numpy as np
 import pandas as pd
 from finta import TA
+from sklearn.neighbors import KNeighborsRegressor
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import accuracy_score
 
 logger = get_logger(__name__)
 
@@ -13,9 +16,10 @@ class TertiaryModel:
     """Model class for prediction"""
 
     def __init__(self):
-        pass
+        self.knn_model = KNeighborsRegressor(n_neighbors=3)
+        self.accuracy = 0
 
-    def train(self, X_and_y: pd.DataFrame):
+    def train(self, X_and_y: pd.DataFrame, tt_split: float = 0.8) -> float:
         """Train the model on the given data
 
         Args:
@@ -23,6 +27,16 @@ class TertiaryModel:
             y (pd.DataFrame): y variable
         """
         logger.warning("No training implemented")
+        X = X_and_y.drop("y", axis=1)
+        y = X_and_y["y"]
+        X_train, X_test, y_train, y_test = train_test_split(
+            X, y, test_size=1 - tt_split
+        )
+        self.knn_model.fit(X_train, y_train)
+        y_pred = np.round(self.knn_model.predict(X_test))  # round to binary
+        self.accuracy = accuracy_score(y_test, y_pred)
+        logger.info(f"Accuracy: {self.accuracy}")
+        return self.accuracy
 
     @staticmethod
     def feature_engineer(bars: pd.DataFrame) -> pd.DataFrame:
@@ -69,12 +83,10 @@ class TertiaryModel:
         -1 = sell
         0 = hold
         """
+
         latest = feature_engineered_bars.tail(1)  # get latest row
-        if latest["RSI"].values[0] < 30:
-            return 1
-        elif latest["RSI"].values[0] > 70:
-            return -1
-        return 0
+        pred = self.knn_model.predict(latest)
+        return pred
 
     def save(self, path):
         """Saves the model to the given path"""
