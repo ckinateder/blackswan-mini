@@ -8,6 +8,7 @@ from finta import TA
 from sklearn.neighbors import KNeighborsRegressor
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score
+from sklearn.svm import SVC
 
 logger = get_logger(__name__)
 
@@ -86,6 +87,9 @@ class TertiaryModel:
 
         latest = feature_engineered_bars.tail(1)  # get latest row
         pred = self.knn_model.predict(latest)
+        if len(pred) == 1:
+            return round(pred[0])
+        logger.error("Prediction is not of length 1; vector prediction not supported!")
         return pred
 
     def save(self, path):

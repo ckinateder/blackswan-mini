@@ -142,7 +142,7 @@ class AIOTrader:
         limit_order = self.trading_client.submit_order(order_data=limit_order_data)
 
         # log
-        logger.info(f"New bar for {b.symbol}\n{engineered}")
+        logger.debug(f"New bar for {b.symbol}\n{engineered}")
 
     async def _on_trade(self, t: any):
         """Will receive a trade from the websocket
@@ -152,14 +152,16 @@ class AIOTrader:
         """
         o = t.order
         if t.event == TradeEvent.FILL:
-            logger.info(f"Trade filled: {o.id} ({o.side} {o.qty} @ {o.filled_at})")
+            logger.info(
+                f"Trade filled: {o.id} ({o.side} {o.qty} {o.symbol} @ {o.filled_avg_price})"
+            )
         elif t.event == TradeEvent.NEW:
-            deets = f"{o.side} {o.qty}"
+            deets = f"{o.side} {o.qty} {o.symbol}"
             if o.type == OrderType.LIMIT:
                 deets += f" @ {o.limit_price}"
             logger.info(f"Trade created: {o.id} ({deets})")
         elif t.event == TradeEvent.CANCELED:
-            deets = f"{o.side} {o.qty}"
+            deets = f"{o.side} {o.qty} {o.symbol}"
             if o.type == OrderType.LIMIT:
                 deets += f" @ {o.limit_price}"
             logger.info(f"Trade canceled: {o.id} ({deets})")
@@ -335,8 +337,9 @@ class AIOTrader:
             float: _description_
         """
         return (
-            self.account.portfolio_value - self.starting_account.portfolio_value
-        ) / self.starting_account.portfolio_value
+            float(self.account.portfolio_value)
+            - float(self.starting_account.portfolio_value)
+        ) / float(self.starting_account.portfolio_value)
 
     def _format_account(self) -> str:
         """Formats the account balance for logging
