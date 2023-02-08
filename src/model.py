@@ -18,6 +18,7 @@ class TertiaryModel:
 
     def __init__(self):
         self.knn_model = KNeighborsRegressor(n_neighbors=3)
+        self.svm_model = SVC(kernel="rbf")
         self.accuracy = 0
 
     def train(self, X_and_y: pd.DataFrame, tt_split: float = 0.8) -> float:
@@ -27,14 +28,14 @@ class TertiaryModel:
             X (pd.DataFrame): feature engineered bars
             y (pd.DataFrame): y variable
         """
-        logger.warning("No training implemented")
+        logger.info("Training SVM model...")
         X = X_and_y.drop("y", axis=1)
         y = X_and_y["y"]
         X_train, X_test, y_train, y_test = train_test_split(
             X, y, test_size=1 - tt_split
         )
-        self.knn_model.fit(X_train, y_train)
-        y_pred = np.round(self.knn_model.predict(X_test))  # round to binary
+        self.svm_model.fit(X_train, y_train)
+        y_pred = np.round(self.svm_model.predict(X_test))  # round to binary
         self.accuracy = accuracy_score(y_test, y_pred)
         logger.info(f"Accuracy: {self.accuracy}")
         return self.accuracy
@@ -86,7 +87,7 @@ class TertiaryModel:
         """
 
         latest = feature_engineered_bars.tail(1)  # get latest row
-        pred = self.knn_model.predict(latest)
+        pred = self.svm_model.predict(latest)
         if len(pred) == 1:
             return round(pred[0])
         logger.error("Prediction is not of length 1; vector prediction not supported!")
